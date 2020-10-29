@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
+int* solve_sat(int** sat);
 
 int evalute_solution(int** sat, int* solution);
 int* random_solution(int var_num);
@@ -16,20 +17,66 @@ void print_formula(int** formula);
 //###################################################//
 
 int main(int argc, char** argv){
-    srand(0);
-    int i;
-    for(i = 0; i<128;i++){
-        int** sat = random_ksat(16,16,3);
-        int* solution = random_solution(16);
-        //print_array(solution);
-        //print_formula(sat);
-        //printf("%d\n", evalute_solution(sat, solution));
-        erase_sat(sat);
-        erase_solution(solution);
-    }
+    srand(time(NULL));
+    int** sat = random_ksat(100,420,3);
+    int* sol = solve_sat(sat);
+    //print_formula(sat);
+    print_array(sol);
+    printf("%d\n",evalute_solution(sat,sol));
+    erase_sat(sat);
+    erase_solution(sol);
 }
 
 //###################################################//
+
+int* solve_sat(int** sat){
+    
+    int var_num = sat[0][0];
+    int cls_num = sat[0][1];
+    int* current_solution = random_solution(var_num);
+    int current_score = evalute_solution(sat, current_solution);
+
+    double MAX_RETRIES = 1000;
+    double MAX_TEMPERATURE = 0.3;
+    double MIN_TEMPERATURE = 0.001;
+    double DECAY_RATE = 1.0 / var_num;
+    double current_temperature = MAX_TEMPERATURE;
+
+    int i;
+    for(i = 0; i < MAX_RETRIES; i++){
+        int j = 0;
+        while(current_temperature >= MIN_TEMPERATURE){
+            current_temperature = MAX_TEMPERATURE * pow(M_E, (-j)*DECAY_RATE);
+            int k;
+            for(k = 1; k <= var_num ; k++){
+                current_solution[k] = -current_solution[k];
+                int new_score = evalute_solution(sat, current_solution);
+                if(new_score == cls_num) return current_solution;
+                int delta = new_score - current_score;
+                if(delta >= 0){
+                    current_score = new_score;
+                }
+                else{
+                    double threshold = (-delta) / current_temperature;
+                    threshold = 1 + pow(M_E, threshold);
+                    threshold = 1 / threshold;
+                    double random_check = random() / RAND_MAX;
+                    if(random_check < threshold){
+                        current_score = new_score;
+                    }
+                    else{
+                        current_solution[k] = -current_solution[k];
+                    }
+                }
+            }
+            ++j;
+        }
+    }
+
+    return current_solution;
+}
+
+
 
 int evalute_solution(int** sat, int* solution){ 
     int fitness = 0;
