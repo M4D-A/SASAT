@@ -2,11 +2,13 @@
 #include <stdlib.h>
 #include <time.h>
 #include <math.h>
-int* solve_sat(int** sat);
+#include <ctype.h> //isdigit()
 
+int* solve_sat(int** sat);
 int evalute_solution(int** sat, int* solution);
 int* random_solution(int var_num);
 int** random_ksat(int var_num, int cls_num, int k);
+int** read_sat_from_file(char* filename);
 
 void erase_solution(int* solution);
 void erase_sat(int** sat);
@@ -18,7 +20,7 @@ void print_formula(int** formula);
 
 int main(int argc, char** argv){
     srand(time(NULL));
-    int** sat = random_ksat(100,420,3);
+    int** sat = read_sat_from_file("sat");
     int* sol = solve_sat(sat);
     //print_formula(sat);
     print_array(sol);
@@ -37,7 +39,7 @@ int* solve_sat(int** sat){
     int current_score = evalute_solution(sat, current_solution);
 
     double MAX_RETRIES = 1000;
-    double MAX_TEMPERATURE = 0.3;
+    double MAX_TEMPERATURE = 0.4;
     double MIN_TEMPERATURE = 0.001;
     double DECAY_RATE = 1.0 / var_num;
     double current_temperature = MAX_TEMPERATURE;
@@ -75,8 +77,6 @@ int* solve_sat(int** sat){
 
     return current_solution;
 }
-
-
 
 int evalute_solution(int** sat, int* solution){ 
     int fitness = 0;
@@ -132,6 +132,86 @@ int** random_ksat(int var_num, int cls_num, int k){
         free(set);
     }
     return ksat;
+}
+
+int** read_sat_from_file(char* filename){ 
+    // ++++ READ FILE VARIABLES ++++ //
+    FILE* sat_file;
+    char* line = NULL;
+    size_t len = 0;
+    size_t read;
+    int clauses_number = 0;
+    int variables_number = 0;
+    int** sat;
+
+    // ++++ READING FILE AND CREATING DATA STRUCTURE ++++ //
+    sat_file = fopen(filename,"r");
+    if (sat_file == NULL)
+        return NULL;
+    
+    while ((read = getline(&line, &len, sat_file)) != -1) { // ommit commentary
+        if(line[0] == 'c')
+            continue;
+        else
+            break;
+    }
+
+    char* temp = line;
+    while(temp){ // get number of variables from sat header
+        if(isdigit(*temp)){
+            variables_number = strtol(temp, &temp, 10);
+            break;
+        }
+        else
+            temp++;
+    }
+
+    while(temp){ // get number of clauses from sat header
+        if(isdigit(*temp)){
+            clauses_number = strtol(temp, &temp, 10);
+            break;
+        }
+        else temp++;
+    }
+
+    sat = (int**)malloc(sizeof(int*) * (clauses_number + 1) ); // allocate clause arrays + header array
+
+    sat[0] = (int*)malloc(sizeof(int) * 2); // header allocation
+    sat[0][1] = clauses_number; // defining header
+    sat[0][0] = variables_number; 
+
+    int i = 1;
+    int j = 1;
+
+    while ((read = getline(&line, &len, sat_file)) != -1) { // load clauses to clauses data structure
+        int number_of_literals = 0; // number of literals in given clause
+        temp = line;
+        while(*temp != '\0'){ // count literals in given clause due to " " termination
+            if(*temp == ' ') number_of_literals++;
+            temp++;
+        }
+        sat[i] = (int*)malloc(sizeof(int) * (number_of_literals + 1) ); // allocate memory for i clause 
+        sat[i][0] = number_of_literals; // save number of variables in each clause
+        temp = line;
+        j = 1;
+        while (*temp){ // find literals in clause, save them to structure
+            if (  isdigit(*temp) || ( *temp=='-' && isdigit(*(temp+1)) )  ){
+                int literal = strtol(temp, &temp, 10);
+                if(literal) sat[i][j++] = literal;
+            }
+                
+            else 
+                temp++;
+        }
+        i++;
+    }
+
+    fclose(sat_file); // Finishing file usage
+
+    if (line)
+        free(line);
+    
+    return sat;
 }
 
 void erase_solution(int* solution){
