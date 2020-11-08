@@ -38,6 +38,8 @@ struct sat{
 
 //#######################//
 
+struct solution* solve_sat(struct sat* fm);
+
 struct solution* random_solution(uint64_t size);
 struct clause* random_clause(uint64_t size);
 struct clause* empty_clause(uint64_t size);
@@ -70,16 +72,61 @@ void pretty_print_sat(struct sat* fm);
 int main(int argc, char** argv){
     srand(123);
     struct sat* fm = read_sat_from_file("sat");
-    struct solution* sol = random_solution(fm->var_num);
+    pretty_print_sat(fm);
+    struct solution* sol = solve_sat(fm);
     pretty_print_solution(sol);
-    uint64_t i;
-    for(i = 0; i < fm->cls_num; i++){
-        printf("%lu\n",evaluate_clause(fm->clauses[i], sol));
-    }
-    printf("s: %lu\n",evaluate_sat(fm, sol));
+    printf("%lu\n",evaluate_sat(fm,sol));
 }
 
 //#######################//
+
+struct solution* solve_sat(struct sat* fm){
+    uint64_t var_num = fm->var_num;
+    uint64_t cls_num = fm->cls_num;
+    struct solution* current_solution = random_solution(var_num);
+    uint64_t current_score = evaluate_sat(fm, current_solution);
+    
+    uint64_t MAX_RETRIES = 1;
+    double MAX_TEMPERATURE = 0.4;
+    double MIN_TEMPERATURE = 0.1;
+    double DECAY_RATE = 1.0 / var_num;
+    double current_temperature = MAX_TEMPERATURE;
+
+    uint64_t i;
+    for(i = 0; i < MAX_RETRIES; i++){
+        uint64_t j = 0;
+        while(current_temperature >= MIN_TEMPERATURE){
+            current_temperature = MAX_TEMPERATURE * pow(M_E, (-j)*DECAY_RATE);
+            uint64_t k;
+            for(k = 0; k < var_num ; k++){
+                uint64_t d = k / 64;
+                uint64_t r = k % 64;
+                current_solution->value[d] ^= (1 << r); 
+                int new_score = evaluate_sat(fm, current_solution);
+                if(new_score == cls_num) return current_solution;
+                int delta = new_score - current_score;
+                if(delta >= 0){
+                    current_score = new_score;
+                }
+                else{
+                    double threshold = (-delta) / current_temperature;
+                    threshold = 1 + pow(M_E, threshold);
+                    threshold = 1 / threshold;
+                    double random_check = random() / RAND_MAX;
+                    if(random_check < threshold){
+                        current_score = new_score;
+                    }
+                    else{
+                        current_solution->value[d] ^= (1 << r); 
+                    }
+                }
+            }
+            ++j;
+        }
+    }
+
+    return current_solution;
+}
 
 struct solution* random_solution(uint64_t size){
     struct solution* retval = malloc(sizeof(struct solution));
