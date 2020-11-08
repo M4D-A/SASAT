@@ -5,6 +5,15 @@
 #include <stdint.h>
 #include <ctype.h> //isdigit()
 
+//#######################// 
+
+const uint64_t m1  = 0x5555555555555555; 
+const uint64_t m2  = 0x3333333333333333; 
+const uint64_t m4  = 0x0f0f0f0f0f0f0f0f; 
+const uint64_t m8  = 0x00ff00ff00ff00ff; 
+const uint64_t m16 = 0x0000ffff0000ffff; 
+const uint64_t m32 = 0x00000000ffffffff; 
+
 //#######################//
 
 struct solution{
@@ -36,26 +45,38 @@ struct sat* random_sat(uint64_t cls_num, uint64_t var_num);
 struct sat* empty_sat(uint64_t cls_num, uint64_t var_num);
 struct sat* read_sat_from_file(char* filename);
 
+uint64_t evaluate_clause(struct clause* cls, struct solution* sol);
+uint64_t evaluate_sat(struct sat* fm, struct solution* sol);
+
 void erase_solution(struct solution* sol);
 void erase_clause(struct clause* cls);
 void erase_sat(struct sat* fm);
+
+uint64_t rand64();
+uint64_t hamming_weight(uint64_t x);
+
+
 
 void print_solution(struct solution* sol);
 void print_clause(struct clause* sol);
 void print_sat(struct sat* fm);
 
-uint64_t rand64();
+void pretty_print_solution(struct solution* sol);
+void pretty_print_clause(struct clause* sol);
+void pretty_print_sat(struct sat* fm);
 
 //#######################//
 
 int main(int argc, char** argv){
-    srand(0);
-    struct sat* fm = random_sat(2,70);
-    erase_sat(fm);
-    fm = read_sat_from_file("sat");
-    erase_sat(fm);
-    fm = empty_sat(12311,345);
-    erase_sat(fm);
+    srand(123);
+    struct sat* fm = read_sat_from_file("sat");
+    struct solution* sol = random_solution(fm->var_num);
+    pretty_print_solution(sol);
+    uint64_t i;
+    for(i = 0; i < fm->cls_num; i++){
+        printf("%lu\n",evaluate_clause(fm->clauses[i], sol));
+    }
+    printf("s: %lu\n",evaluate_sat(fm, sol));
 }
 
 //#######################//
@@ -217,6 +238,38 @@ struct sat* read_sat_from_file(char* filename){
     return fm;
 }
 
+uint64_t evaluate_clause(struct clause* cls, struct solution* sol){
+    uint64_t length = cls->length;
+    if(length != sol->length) return 0;
+
+    uint64_t sat_sum = 0;
+    uint64_t i;
+
+    for(i = 0; i < length; i++){
+        uint64_t word_relevance = cls->presence[0] & sol->presence[0];
+        uint64_t word_cohesion = ~(cls->value[0] ^ sol->value[0]);
+        uint64_t word_satisfaction = word_relevance & word_cohesion;
+        sat_sum += hamming_weight(word_satisfaction);
+    }
+
+    return sat_sum;
+}
+
+uint64_t evaluate_sat(struct sat* fm, struct solution* sol){
+    uint64_t cls_num = fm->cls_num;
+    if(fm->var_num != sol->size) return 0; //Inconsistency
+
+    uint64_t sat_sum = 0;
+    uint64_t i;
+
+    for(i = 0; i < cls_num; ++i){
+        uint64_t cls_eval = evaluate_clause(fm->clauses[i], sol);
+        if(cls_eval) ++sat_sum;
+    }
+    
+    return sat_sum;
+}
+
 void erase_solution(struct solution* sol){
     free(sol->value);
     free(sol->presence);
@@ -238,6 +291,25 @@ void erase_sat(struct sat* fm){
     free(fm->clauses);
     free(fm);
 }
+
+uint64_t rand64(){
+    uint64_t retval = rand();
+    retval <<= 32;
+    retval |= rand();
+    return retval;
+}
+
+uint64_t hamming_weight(uint64_t x){
+    x = (x & m1 ) + ((x >>  1) & m1 ); //put count of each  2 bits into those  2 bits 
+    x = (x & m2 ) + ((x >>  2) & m2 ); //put count of each  4 bits into those  4 bits 
+    x = (x & m4 ) + ((x >>  4) & m4 ); //put count of each  8 bits into those  8 bits 
+    x = (x & m8 ) + ((x >>  8) & m8 ); //put count of each 16 bits into those 16 bits 
+    x = (x & m16) + ((x >> 16) & m16); //put count of each 32 bits into those 32 bits 
+    x = (x & m32) + ((x >> 32) & m32); //put count of each 64 bits into those 64 bits 
+    return x;
+}
+
+
 
 void print_solution(struct solution* sol){
     printf("#s:%8lu |l:%8lu |r:%8lu #\n",sol->size,sol->length,sol->residue);
@@ -271,9 +343,33 @@ void print_sat(struct sat* fm){
     }
 }
 
-uint64_t rand64(){
-    uint64_t retval = rand();
-    retval <<= 32;
-    retval |= rand();
-    return retval;
+void pretty_print_solution(struct solution* sol){
+    uint64_t length = sol->size;
+    int64_t i;
+    uint64_t positive;
+    uint64_t negative;
+
+    for(i = 0; i < length; i++){
+        uint64_t r = i%64;
+        uint64_t d = i/64;
+        if(!r){
+            positive =   sol->value[d]  & sol->presence[d];
+            negative = ~(sol->value[d]) & sol->presence[d];
+        }
+        if(positive >> r & 1) printf("%ld ",(i+1));
+        if(negative >> r & 1) printf("%ld ",-(i+1)); 
+    }
+    printf("0 \n");
+}
+
+void pretty_print_clause(struct clause* cls){
+    pretty_print_solution((struct solution*) cls);
+}
+
+void pretty_print_sat(struct sat* fm){
+    printf("p cnf %lu %lu\n",fm->var_num, fm->cls_num);
+    uint64_t i;
+    for (i = 0; i < fm->cls_num; i++){
+        pretty_print_clause(fm->clauses[i]);
+    }
 }
