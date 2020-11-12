@@ -47,8 +47,7 @@ struct sat* random_sat(uint64_t cls_num, uint64_t var_num);
 struct sat* empty_sat(uint64_t cls_num, uint64_t var_num);
 struct sat* read_sat_from_file(char* filename);
 
-uint64_t evaluate_clause(struct clause* cls, struct solution* sol);
-uint64_t evaluate_sat(struct sat* fm, struct solution* sol);
+uint64_t evaluate_solution(struct sat* fm, struct solution* sol);
 
 void erase_solution(struct solution* sol);
 void erase_clause(struct clause* cls);
@@ -71,11 +70,33 @@ void pretty_print_sat(struct sat* fm);
 
 int main(int argc, char** argv){
     srand(123);
+    
+    /*
     struct sat* fm = read_sat_from_file("sat");
     pretty_print_sat(fm);
     struct solution* sol = solve_sat(fm);
     pretty_print_solution(sol);
     printf("%lu\n",evaluate_sat(fm,sol));
+    */
+
+    /*
+    struct sat* fm = read_sat_from_file("sat");
+    struct solution* sol = random_solution(fm->var_num);
+    int i,j=0;
+    for(i = 0; i < pow(2,16); i++){
+        j+=evaluate_sat(fm,sol);
+    }
+    return j;
+    */
+
+    /*
+    struct sat* fm = read_sat_from_file("sat2");
+    struct solution* sol = random_solution(160);
+    pretty_print_sat(fm);
+    printf("\n");
+    pretty_print_solution(sol);
+    printf("%lu\n",evaluate_sat(fm,sol));
+    */
 }
 
 //#######################//
@@ -84,7 +105,7 @@ struct solution* solve_sat(struct sat* fm){
     uint64_t var_num = fm->var_num;
     uint64_t cls_num = fm->cls_num;
     struct solution* current_solution = random_solution(var_num);
-    uint64_t current_score = evaluate_sat(fm, current_solution);
+    uint64_t current_score = evaluate_solution(fm, current_solution);
     
     uint64_t MAX_RETRIES = 1;
     double MAX_TEMPERATURE = 0.4;
@@ -95,6 +116,7 @@ struct solution* solve_sat(struct sat* fm){
     uint64_t i;
     for(i = 0; i < MAX_RETRIES; i++){
         uint64_t j = 0;
+        current_temperature = MAX_TEMPERATURE;
         while(current_temperature >= MIN_TEMPERATURE){
             current_temperature = MAX_TEMPERATURE * pow(M_E, (-j)*DECAY_RATE);
             uint64_t k;
@@ -102,7 +124,7 @@ struct solution* solve_sat(struct sat* fm){
                 uint64_t d = k / 64;
                 uint64_t r = k % 64;
                 current_solution->value[d] ^= (1 << r); 
-                int new_score = evaluate_sat(fm, current_solution);
+                int new_score = evaluate_solution(fm, current_solution);
                 if(new_score == cls_num) return current_solution;
                 int delta = new_score - current_score;
                 if(delta >= 0){
@@ -285,33 +307,23 @@ struct sat* read_sat_from_file(char* filename){
     return fm;
 }
 
-uint64_t evaluate_clause(struct clause* cls, struct solution* sol){
-    uint64_t length = cls->length;
-    if(length != sol->length) return 0;
-
-    uint64_t sat_sum = 0;
-    uint64_t i;
-
-    for(i = 0; i < length; i++){
-        uint64_t word_relevance = cls->presence[0] & sol->presence[0];
-        uint64_t word_cohesion = ~(cls->value[0] ^ sol->value[0]);
-        uint64_t word_satisfaction = word_relevance & word_cohesion;
-        sat_sum += hamming_weight(word_satisfaction);
-    }
-
-    return sat_sum;
-}
-
-uint64_t evaluate_sat(struct sat* fm, struct solution* sol){
+uint64_t evaluate_solution(struct sat* fm, struct solution* sol){
+    //if(fm->var_num != sol->size) return 0; //Inconsistency
+    uint64_t* sp = sol->presence;
+    uint64_t* sv = sol->value;
     uint64_t cls_num = fm->cls_num;
-    if(fm->var_num != sol->size) return 0; //Inconsistency
-
+    uint64_t i,j;
     uint64_t sat_sum = 0;
-    uint64_t i;
 
     for(i = 0; i < cls_num; ++i){
-        uint64_t cls_eval = evaluate_clause(fm->clauses[i], sol);
-        if(cls_eval) ++sat_sum;
+        uint64_t* cp = fm->clauses[i]->presence;
+        uint64_t* cv = fm->clauses[i]->value;
+        for(j = 0; j < sol->length; ++j){
+            if( cp[j] & sp[j] & ~(cv[j] ^ sv[j]) ){
+                ++sat_sum;
+                break;
+            }
+        }
     }
     
     return sat_sum;
