@@ -5,12 +5,15 @@
 #include <ctype.h> //isdigit()
 
 int* solve_sat(int** sat);
-int evalute_solution(int** sat, int* solution);
-int* random_solution(int var_num);
-int** random_ksat(int var_num, int cls_num, int k);
-int** read_sat_from_file(char* filename);
 
-void erase_solution(int* solution);
+int evalute_solution(int** sat, int* solution);
+int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick);
+int* sat_model(int** sat, int* solution);
+int* base_solution(int var_num);
+int** read_sat_from_file(char* filename);
+int** transpose_sat(int** sat);
+
+void erase_array(int* solution);
 void erase_sat(int** sat);
 
 void print_array(int* array);
@@ -19,23 +22,19 @@ void print_formula(int** formula);
 //###################################################//
 
 int main(int argc, char** argv){
-    srand(123);
     int** sat = read_sat_from_file("sat");
     int* sol = solve_sat(sat);
-    //print_formula(sat);
     print_array(sol);
-    printf("%d\n",evalute_solution(sat,sol));
-    erase_sat(sat);
-    erase_solution(sol);
+    printf("%d \n", evalute_solution(sat,sol));
 }
 
 //###################################################//
 
 int* solve_sat(int** sat){
-    int var_num = sat[0][0];
-    int cls_num = sat[0][1];
+    int cls_num = sat[0][0];
+    int var_num = sat[0][1];
 
-    int* current_solution = random_solution(var_num);
+    int* current_solution = base_solution(var_num);
     int current_score = evalute_solution(sat, current_solution);
 
     int MAX_RETRIES = 100;
@@ -84,8 +83,8 @@ int* solve_sat(int** sat){
 
 int evalute_solution(int** sat, int* solution){ 
     int fitness = 0;
-    int var_num = sat[0][0]; 
-    int cls_num = sat[0][1];
+    int cls_num = sat[0][0]; 
+    int var_num = sat[0][1];
     int i,j;
     for(i = 1; i <= cls_num; i++){
         for(j = 1; j <= sat[i][0]; j++){
@@ -99,43 +98,65 @@ int evalute_solution(int** sat, int* solution){
     return fitness;
 }
 
-int* random_solution(int var_num){
+int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick){
+    int fitness = model[model[0] + 1];
+    int length;
+    int i;
+
+    if(flick == 0){
+        return fitness;
+    }
+    
+    int old_val = solution[flick];
+    solution[flick] = -solution[flick];
+    length = t_sat[flick][0];
+    for(i = 1; i <= length; i++){
+        int occurance = t_sat[flick][i];
+        int pos = abs(occurance);
+        if( (old_val > 0) == (occurance > 0) ) {
+            model[pos]--;
+            if(model[pos] == 0) fitness--;
+        }
+        else {
+            model[pos]++;
+            if(model[pos] == 1) fitness++;
+        }
+    }
+
+    model[model[0]+1] = fitness;
+    return fitness;
+}
+
+int* sat_model(int** sat, int* solution){
+    int cls_num = sat[0][0]; 
+    int var_num = sat[0][1];
+    int fitness;
+    int* model = calloc(cls_num + 2, sizeof(int));
+    model[0] = cls_num;
+    int i,j;
+
+    for(i = 1; i <= cls_num; i++){
+        for(j = 1; j <= sat[i][0]; j++){
+            int literal = sat[i][j];
+            if(literal == solution[abs(literal)]){
+                ++model[i];
+            }
+        }
+        if(model[i] > 0) fitness++;
+    }
+    model[cls_num + 1] = fitness;
+
+    return model;
+}
+
+int* base_solution(int var_num){
     int* solution = malloc((var_num + 1) * sizeof(int));
     solution[0] = var_num;
     int i;
     for (i = 1; i <= var_num; i++){
-        solution[i] = (rand() % 2) ? i : -i; 
+        solution[i] = i; 
     }
     return solution;
-}
-
-int** random_ksat(int var_num, int cls_num, int k){
-    if (k > var_num) return NULL;
-    int** ksat = malloc((cls_num + 1) * sizeof(int*));
-    ksat[0] = malloc(2 * sizeof(int));
-    ksat[0][0] = var_num; 
-    ksat[0][1] = cls_num;
-    int i,j;
-    for(i = 1; i <= cls_num; i++){
-        ksat[i] = malloc((k + 1) * sizeof(int));
-        ksat[i][0] = k;
-        int* set = calloc((var_num + 1), sizeof(int));
-        for(j = 1; j <= k; j++){
-            int to_set = 0;
-            do{
-                to_set = rand() % (var_num + 1);
-                if(set[to_set] == 0){
-                    set[to_set] = 1;
-                }
-                else{
-                    to_set = 0;
-                }
-            }while(to_set == 0);
-            ksat[i][j] = (rand() % 2) ? to_set : -to_set;
-        }
-        free(set);
-    }
-    return ksat;
 }
 
 int** read_sat_from_file(char* filename){ 
@@ -181,8 +202,8 @@ int** read_sat_from_file(char* filename){
     sat = (int**)malloc(sizeof(int*) * (clauses_number + 1) ); // allocate clause arrays + header array
 
     sat[0] = (int*)malloc(sizeof(int) * 2); // header allocation
-    sat[0][1] = clauses_number; // defining header
-    sat[0][0] = variables_number; 
+    sat[0][0] = clauses_number; // defining header
+    sat[0][1] = variables_number; 
 
     int i = 1;
     int j = 1;
@@ -218,12 +239,51 @@ int** read_sat_from_file(char* filename){
     return sat;
 }
 
-void erase_solution(int* solution){
+int** transpose_sat(int** sat){
+    int i,j;
+    int cls_num = sat[0][0];
+    int var_num = sat[0][1]; 
+
+    int** t_sat = malloc( (var_num + 1) * sizeof(int*) );
+    t_sat[0] = malloc( 2 * sizeof(int) );
+    t_sat[0][0] = var_num;
+    t_sat[0][1] = cls_num;
+
+    int* occurances = calloc(var_num + 1, sizeof(int));
+    occurances[0] = var_num;
+
+    for(i = 1; i <= cls_num; ++i){
+        int length = sat[i][0];
+        for(j = 1; j <= length; ++j){
+            ++occurances[abs(sat[i][j])];
+        }
+    }
+
+    for(i = 1; i <= var_num; ++i){
+        t_sat[i] = malloc( (occurances[i] + 1) * sizeof(int) );
+        t_sat[i][0] = occurances[i];
+    }
+
+    for(i = 1; i <= cls_num; ++i){
+        int length = sat[i][0];
+        for(j = 1; j <= length; ++j){
+            int literal = sat[i][j];
+            int variable = abs(literal);
+            if(literal < 0) t_sat[variable][occurances[variable]--] = -i;
+            if(literal > 0) t_sat[variable][occurances[variable]--] = i;
+        }
+    }
+
+    free(occurances);
+    return t_sat;
+}
+
+void erase_array(int* solution){
     free(solution);
 }
 
 void erase_sat(int** sat){
-    int cls_num = sat[0][1];
+    int cls_num = sat[0][0];
     int i;
     for(i = 0; i <= cls_num; i++){
         free(sat[i]);
@@ -249,9 +309,9 @@ void print_array(int* array){
 void print_formula(int** formula){
     int i,j;
     printf("##################\n");
-    printf("v: %d, c: %d\n",formula[0][0],formula[0][1]);
+    printf("\\/: %d, ->: %d\n",formula[0][0],formula[0][1]);
     printf("##################\n");
-    int length = formula[0][1];
+    int length = formula[0][0];
     for(i = 1; i <= length; i++){
         if(formula[i]){
             printf("%3d(%3d): ", i, formula[i][0]);
@@ -264,4 +324,33 @@ void print_formula(int** formula){
             printf("%3d(SAT):\n", i);
         }
     }
+}
+
+int** random_ksat(int var_num, int cls_num, int k){
+    if (k > var_num) return NULL;
+    int** ksat = malloc((cls_num + 1) * sizeof(int*));
+    ksat[0] = malloc(2 * sizeof(int));
+    ksat[0][0] = cls_num; 
+    ksat[0][1] = var_num;
+    int i,j;
+    for(i = 1; i <= cls_num; i++){
+        ksat[i] = malloc((k + 1) * sizeof(int));
+        ksat[i][0] = k;
+        int* set = calloc((var_num + 1), sizeof(int));
+        for(j = 1; j <= k; j++){
+            int to_set = 0;
+            do{
+                to_set = rand() % (var_num + 1);
+                if(set[to_set] == 0){
+                    set[to_set] = 1;
+                }
+                else{
+                    to_set = 0;
+                }
+            }while(to_set == 0);
+            ksat[i][j] = (rand() % 2) ? to_set : -to_set;
+        }
+        free(set);
+    }
+    return ksat;
 }
