@@ -36,8 +36,6 @@ int main(int argc, char** argv){
 
 //###################################################//
 
-
-
 int* solve_sat(int** sat, int MAX_RETRIES, double MAX_TEMPERATURE, double MIN_TEMPERATURE){
     int cls_num = sat[0][0];
     int var_num = sat[0][1];
