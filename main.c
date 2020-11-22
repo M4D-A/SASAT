@@ -5,7 +5,7 @@
 #include <math.h>
 #include <ctype.h> //isdigit()
 
-int* solve_sat(int** sat);
+int* solve_sat(int** sat, int MAX_RETRIES, double MAX_TEMPERATURE, double MIN_TEMPERATURE);
 
 int evalute_solution(int** sat, int* solution);
 int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick);
@@ -21,11 +21,13 @@ void erase_sat(int** sat);
 void print_array(int* array);
 void print_formula(int** formula);
 
+
+
 //###################################################//
 
 int main(int argc, char** argv){
-    int** sat = read_sat_from_file("sat");
-    int* sol = solve_sat(sat);
+    int** sat = read_sat_from_file(argv[1]);
+    int* sol = solve_sat(sat, 200, 0.3, 0.001);
     print_array(sol);
     printf("%d \n", evalute_solution(sat,sol));
     erase_sat(sat);
@@ -34,40 +36,60 @@ int main(int argc, char** argv){
 
 //###################################################//
 
-int* solve_sat(int** sat){
-    int MAX_RETRIES = 200;
-    double MAX_TEMPERATURE = 0.3;
-    double MIN_TEMPERATURE = 0.0001;
-    double current_temperature = MAX_TEMPERATURE;
 
+
+int* solve_sat(int** sat, int MAX_RETRIES, double MAX_TEMPERATURE, double MIN_TEMPERATURE){
     int cls_num = sat[0][0];
     int var_num = sat[0][1];
 
     double DECAY_RATE = 1.0 / var_num;
 
     int** tsat = transpose_sat(sat);
+
     int* current_solution = base_solution(var_num);
     int* current_model = sat_model(sat, current_solution);
-    int current_score = current_model[current_model[0]];
+    int  current_score = current_model[current_model[0]];
 
-    int i;
+    int* new_solution = malloc((var_num + 1) * sizeof(int));
+    int* new_model = malloc((cls_num + 2) * sizeof(int));
+    int new_score;
+
+    int* max_solution = malloc((var_num + 1) * sizeof(int));
+    int* max_model = malloc((cls_num + 2) * sizeof(int));
+    int  max_score = current_score;
+
+    int i,j,k;
     for(i = 0; i < MAX_RETRIES; ++i){
-        int j = 0;
-        current_temperature = MAX_TEMPERATURE;
+        j = 0;
+        double current_temperature = MAX_TEMPERATURE;
         while(current_temperature >= MIN_TEMPERATURE){
             current_temperature = MAX_TEMPERATURE * pow(2.71828, (-j)*DECAY_RATE);
-            int k;
             for(k = 1; k <= var_num ; k++){
-                int new_score = alter_and_evaluate(tsat, current_solution, current_model, k);
+                copy_array(current_solution, new_solution);
+                copy_array(current_model, new_model);
+                new_score = alter_and_evaluate(tsat, new_solution, new_model, k);
                 if(new_score == cls_num){
                     erase_sat(tsat);
                     erase_array(current_model);
+                    erase_array(current_solution);
+                    erase_array(max_model);
+                    erase_array(max_solution);
+                    erase_array(new_model);
                     printf("finished at %d\n",i); 
-                    return current_solution;
+                    return new_solution;
                 }
+                
+                if(new_score >= max_score){
+                    max_score = new_score;
+                    copy_array(new_solution, max_solution);
+                    copy_array(new_model, max_model);
+                }
+
                 int delta = new_score - current_score;
                 if(delta >= 0){
                     current_score = new_score;
+                    copy_array(new_solution, current_solution);
+                    copy_array(new_model, current_model);
                 }
                 else{
                     double threshold = (-delta) / current_temperature;
@@ -76,20 +98,26 @@ int* solve_sat(int** sat){
                     double random_check = random() / RAND_MAX;
                     if(random_check < threshold){
                         current_score = new_score;
-                    }
-                    else{
-                        alter_and_evaluate(tsat, current_solution, current_model, k);
+                        copy_array(new_solution, current_solution);
+                        copy_array(new_model, current_model);
                     }
                 }
             }
             ++j;
         }
     }
-    printf("finished at %d\n",i);
+
     erase_sat(tsat);
     erase_array(current_model);
-    return current_solution;
+    erase_array(current_solution);
+    erase_array(max_model);
+    erase_array(new_solution);
+    erase_array(new_model);
+    printf("finished at %d\n",i); 
+    return max_solution;
 }
+
+//***************************************************//
 
 int evalute_solution(int** sat, int* solution){ 
     int fitness = 0;
@@ -140,13 +168,12 @@ int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick){
 int* sat_model(int** sat, int* solution){
     int cls_num = sat[0][0]; 
     int var_num = sat[0][1];
-    int fitness;
+    int fitness = 0;
     int* model = calloc(cls_num + 2, sizeof(int));
     model[0] = cls_num + 1;
     int i,j;
 
     for(i = 1; i <= cls_num; i++){
-        model[i] = 0;
         for(j = 1; j <= sat[i][0]; j++){
             int literal = sat[i][j];
             if(literal == solution[abs(literal)]){
@@ -289,6 +316,8 @@ int** transpose_sat(int** sat){
     return t_sat;
 }
 
+//***************************************************//
+
 void copy_array(int* source, int* destination){
     memcpy(destination, source, (source[0]+1) * sizeof(int));
 }
@@ -305,6 +334,8 @@ void erase_sat(int** sat){
     }
     free(sat);
 }
+
+//***************************************************//
 
 void print_array(int* array){
     printf("******************\n");
@@ -339,33 +370,4 @@ void print_formula(int** formula){
             printf("%3d(SAT):\n", i);
         }
     }
-}
-
-int** random_ksat(int var_num, int cls_num, int k){
-    if (k > var_num) return NULL;
-    int** ksat = malloc((cls_num + 1) * sizeof(int*));
-    ksat[0] = malloc(2 * sizeof(int));
-    ksat[0][0] = cls_num; 
-    ksat[0][1] = var_num;
-    int i,j;
-    for(i = 1; i <= cls_num; i++){
-        ksat[i] = malloc((k + 1) * sizeof(int));
-        ksat[i][0] = k;
-        int* set = calloc((var_num + 1), sizeof(int));
-        for(j = 1; j <= k; j++){
-            int to_set = 0;
-            do{
-                to_set = rand() % (var_num + 1);
-                if(set[to_set] == 0){
-                    set[to_set] = 1;
-                }
-                else{
-                    to_set = 0;
-                }
-            }while(to_set == 0);
-            ksat[i][j] = (rand() % 2) ? to_set : -to_set;
-        }
-        free(set);
-    }
-    return ksat;
 }
