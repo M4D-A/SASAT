@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <math.h>
 #include <ctype.h> //isdigit()
@@ -13,6 +14,7 @@ int* base_solution(int var_num);
 int** read_sat_from_file(char* filename);
 int** transpose_sat(int** sat);
 
+void copy_array(int* source, int* destination);
 void erase_array(int* solution);
 void erase_sat(int** sat);
 
@@ -26,34 +28,40 @@ int main(int argc, char** argv){
     int* sol = solve_sat(sat);
     print_array(sol);
     printf("%d \n", evalute_solution(sat,sol));
+    erase_sat(sat);
+    erase_array(sol);
 }
 
 //###################################################//
 
 int* solve_sat(int** sat){
+    int MAX_RETRIES = 200;
+    double MAX_TEMPERATURE = 0.3;
+    double MIN_TEMPERATURE = 0.0001;
+    double current_temperature = MAX_TEMPERATURE;
+
     int cls_num = sat[0][0];
     int var_num = sat[0][1];
 
-    int* current_solution = base_solution(var_num);
-    int current_score = evalute_solution(sat, current_solution);
-
-    int MAX_RETRIES = 100;
-    double MAX_TEMPERATURE = 0.3;
-    double MIN_TEMPERATURE = 0.0005;
     double DECAY_RATE = 1.0 / var_num;
-    double current_temperature = MAX_TEMPERATURE;
+
+    int** tsat = transpose_sat(sat);
+    int* current_solution = base_solution(var_num);
+    int* current_model = sat_model(sat, current_solution);
+    int current_score = current_model[current_model[0]];
 
     int i;
     for(i = 0; i < MAX_RETRIES; ++i){
         int j = 0;
         current_temperature = MAX_TEMPERATURE;
         while(current_temperature >= MIN_TEMPERATURE){
-            current_temperature = MAX_TEMPERATURE * pow(M_E, (-j)*DECAY_RATE);
+            current_temperature = MAX_TEMPERATURE * pow(2.71828, (-j)*DECAY_RATE);
             int k;
             for(k = 1; k <= var_num ; k++){
-                current_solution[k] = -current_solution[k];
-                int new_score = evalute_solution(sat, current_solution);
+                int new_score = alter_and_evaluate(tsat, current_solution, current_model, k);
                 if(new_score == cls_num){
+                    erase_sat(tsat);
+                    erase_array(current_model);
                     printf("finished at %d\n",i); 
                     return current_solution;
                 }
@@ -63,14 +71,14 @@ int* solve_sat(int** sat){
                 }
                 else{
                     double threshold = (-delta) / current_temperature;
-                    threshold = 1 + pow(M_E, threshold);
+                    threshold = 1 + pow(2.71828, threshold);
                     threshold = 1 / threshold;
                     double random_check = random() / RAND_MAX;
                     if(random_check < threshold){
                         current_score = new_score;
                     }
                     else{
-                        current_solution[k] = -current_solution[k];
+                        alter_and_evaluate(tsat, current_solution, current_model, k);
                     }
                 }
             }
@@ -78,6 +86,8 @@ int* solve_sat(int** sat){
         }
     }
     printf("finished at %d\n",i);
+    erase_sat(tsat);
+    erase_array(current_model);
     return current_solution;
 }
 
@@ -99,7 +109,7 @@ int evalute_solution(int** sat, int* solution){
 }
 
 int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick){
-    int fitness = model[model[0] + 1];
+    int fitness = model[model[0]];
     int length;
     int i;
 
@@ -123,7 +133,7 @@ int alter_and_evaluate(int** t_sat, int* solution, int* model, int flick){
         }
     }
 
-    model[model[0]+1] = fitness;
+    model[model[0]] = fitness;
     return fitness;
 }
 
@@ -132,10 +142,11 @@ int* sat_model(int** sat, int* solution){
     int var_num = sat[0][1];
     int fitness;
     int* model = calloc(cls_num + 2, sizeof(int));
-    model[0] = cls_num;
+    model[0] = cls_num + 1;
     int i,j;
 
     for(i = 1; i <= cls_num; i++){
+        model[i] = 0;
         for(j = 1; j <= sat[i][0]; j++){
             int literal = sat[i][j];
             if(literal == solution[abs(literal)]){
@@ -276,6 +287,10 @@ int** transpose_sat(int** sat){
 
     free(occurances);
     return t_sat;
+}
+
+void copy_array(int* source, int* destination){
+    memcpy(destination, source, (source[0]+1) * sizeof(int));
 }
 
 void erase_array(int* solution){
