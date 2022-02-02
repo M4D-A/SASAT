@@ -1,4 +1,4 @@
-# DPLL
+# SASAT
 
 Implementation of Simulated Annealing SAT-solver algorithm
 
